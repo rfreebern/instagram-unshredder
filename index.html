@@ -1,0 +1,44 @@
+<html>
+<head>
+    <title>Image Unshredder: Pure JS solution to the Intagram Unshredder Challenge</title>
+    <link href='http://fonts.googleapis.com/css?family=Open+Sans+Condensed:300' rel='stylesheet' type='text/css'>
+    <link href='http://fonts.googleapis.com/css?family=Lato' rel='stylesheet' type='text/css'>
+    <style type="text/css">
+        body { text-align: center; }
+        h1 { font-size: 64pt; line-height: 0.8em; }
+        h1, h2 { font-family: 'Open Sans Condensed', sans-serif; }
+        div { margin: 0 auto 5px auto; }
+        p {
+            margin: 0 auto;
+            width: 640px;
+            font-family: 'Lato', sans-serif;
+        }
+        hr { width: 640px; }
+        img {
+            margin: 0 5px 0 0;
+            -moz-box-shadow: 2px 2px 2px #ccc;
+            -webkit-box-shadow: 2px 2px 2px #ccc;
+            box-shadow: 2px 2px 2px #ccc;
+        }
+        img:hover {
+            -moz-box-shadow: 5px 5px 5px #ccc;
+            -webkit-box-shadow: 5px 5px 5px #ccc;
+            box-shadow: 5px 5px 5px #ccc;
+        }
+    </style>
+</head>
+<body>
+    <h1>Image Unshredder</h1>
+    <p>
+        Pure-JS solution to the <a href="http://instagram-engineering.tumblr.com/post/12651721845/instagram-engineering-challenge-the-unshredder">Instagram
+        Unshredder Challenge</a> using HTML5 &lt;canvas&gt;. Read more about my development process <a href="http://rfreebern.posterous.com/unshredding">at
+        my weblog</a>. I'm <a href="http://twitter.com/rfreebern">@rfreebern on Twitter</a>.
+    </p>
+    <hr/>
+    <h2>Click to unshred:</h2>
+    <div><img src="TokyoPanoramaShredded.png" /></div>
+    <div><img src="pumpkin_shredded.png" /></div>
+    <div><img src="glasses_shredded.png" /></div>
+    <script type="text/javascript" src="unshred.js"></script>
+</body>
+</html>
