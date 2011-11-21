@@ -1,80 +1,133 @@
-window.onload = function () {
-    var i = document.getElementsByTagName('img')[0];
-    var c = document.createElement('canvas');
-    c.width = i.width;
-    c.height = i.height;
-    var x = c.getContext('2d');
-    x.drawImage(i, 0, 0);
-    var d = x.getImageData(0, 0, i.width, i.height);
-    var n = i.width / 32;
+(function (window, document, undefined) {
+    var samplingInterval = 1;
 
-    var stripes = [];
-    for (var s = 0; s < n; s++) {
-        stripes[s] = [[], []];
-        var c1 = s * (32 * 4);
-        var c2 = c1 + (31 * 4);
-        for (var y = 0; y < i.height; y++) {
-            stripes[s][0][y] = d.data[y * i.width * 4 + c1 + 0] * 0x01000000
-                             + d.data[y * i.width * 4 + c1 + 1] * 0x00010000
-                             + d.data[y * i.width * 4 + c1 + 2] * 0x00000100
-                             + d.data[y * i.width * 4 + c1 + 3];
-        }
-        for (var y = 0; y < i.height; y++) {
-            stripes[s][1][y] = d.data[y * i.width * 4 + c2 + 0] * 0x01000000
-                             + d.data[y * i.width * 4 + c2 + 1] * 0x00010000
-                             + d.data[y * i.width * 4 + c2 + 2] * 0x00000100
-                             + d.data[y * i.width * 4 + c2 + 3];
-        }
-    }
-    var stripeDiff = [];
-    var compareStripes = [];
-    var worst = -1;
-    var avgLeftScore = [];
-    var bestLeftScore = [];
-    var matchThreshold = -1;
-    for (var s = 0; s < n; s++) {
-        stripeDiff[s] = [];
-        best = -1;
-        avgLeftScore[s] = 0;
-        bestLeftScore[s] = -1;
-        for (var sd = 0; sd < n; sd++) {
-            if (sd == s) continue;
-            var ld = [];
-            var rd = [];
-            for (var y = 0; y < i.height; y++) {
-                ld[y] = Math.abs(stripes[s][0][y] - stripes[sd][1][y]);
-                rd[y] = Math.abs(stripes[s][1][y] - stripes[sd][0][y]);
+    var getPixel = function (canvas, data, x, y) {
+        var pixelIndex = y * canvas.width * 4 + x * 4;
+        var r = data[pixelIndex + 0];
+        var g = data[pixelIndex + 1];
+        var b = data[pixelIndex + 2];
+        var a = data[pixelIndex + 3];
+        return {red: r, green: g, blue: b, alpha: a};
+    };
+
+    /* Thiadmer Reimersma, http://www.compuphase.com/cmetric.htm */
+    var colorDistance = function (p1, p2) {
+        var rmean = (p1.red + p2.red) / 2;
+        var r = p1.red - p2.red;
+        var g = p1.green - p2.green;
+        var b = p1.blue - p2.blue;
+        return Math.sqrt((((512 + rmean) * r * r) >> 8) + 4 * g * g + (((767 - rmean) * b * b) >> 8));
+    };
+
+    var blockAverage = function (canvas, data, x, y, width, height) {
+        var pixelSum = 0;
+        var pixelCount = 0;
+        for (var xi = x; xi < x + width; xi++) {
+            for (var yi = y; yi < y + height; yi++) {
+                pixelSum += pixelToDecimal(getPixel(canvas, data, xi, yi));
+                pixelCount++;
             }
-            ld = ld.sort(function (a, b) { return a - b; }).map(function (a) { return a - ld[0]; });
-            rd = rd.sort(function (a, b) { return a - b; }).map(function (a) { return a - rd[0]; });
-            stripeDiff[s][sd] = [ld[Math.round(y / 2)], rd[Math.round(y / 2)]];
-            if (best == -1 || stripeDiff[s][sd][1] < stripeDiff[s][best][1]) best = sd;
-            avgLeftScore[s] += stripeDiff[s][sd][0];
-            if (bestLeftScore[s] == -1 || bestLeftScore[s] > stripeDiff[s][sd][0]) bestLeftScore[s] = stripeDiff[s][sd][0];
         }
-        var sdlmin = -1;
-        var sdrmin = -1;
-        for (var sdi = 1; sdi < n; sdi++) {
-            if (sdi == s) continue;
-            if (sdlmin == -1 || stripeDiff[s][sdi][0] < sdlmin) sdlmin = stripeDiff[s][sdi][0];
-            if (sdrmin == -1 || stripeDiff[s][sdi][1] < sdrmin) sdrmin = stripeDiff[s][sdi][1];
+        return Math.round(pixelSum / (width * height));
+    };
+
+    var columnDifference = function (canvas, data, column1, column2) {
+        var differenceTotal = 0;
+        for (var i = 0; i < canvas.height; i += samplingInterval) {
+            differenceTotal += colorDistance(getPixel(canvas, data, column1, i), getPixel(canvas, data, column2, i));
         }
-        stripeDiff[s] = stripeDiff[s].map(function (sd) { sd[0] -= sdlmin; sd[1] -= sdrmin; return sd; });
-        compareStripes[s] = best;
-        avgLeftScore[s] = avgLeftScore[s] / (n - 1);
-        if (worst == -1 || (avgLeftScore[s] > avgLeftScore[worst] && bestLeftScore[s] > bestLeftScore[worst])) worst = s;
+        return differenceTotal / (i - samplingInterval);
+    };
+
+    var rootMeanSquare = function (canvas, data) {
+        var sumOfSquares = 0;
+        for (var i = 1; i < canvas.width; i++) sumOfSquares += Math.pow(columnDifference(canvas, data, i - 1, i), 2);
+        return Math.sqrt(sumOfSquares / (i - 1));
+    };
+
+    var findStripeWidth = function (canvas, data) {
+        var possibleColumns = [];
+        var threshold = rootMeanSquare(canvas, data) * 1.5;
+        for (var i = 1; i < canvas.width; i++) {
+            if (columnDifference(canvas, data, i - 1, i) > threshold) possibleColumns.push(i);
+        }
+        var widths = [];
+        for (i = 1; i < possibleColumns.length; i++) {
+            var thisWidth = possibleColumns[i] - possibleColumns[i - 1];
+            if (!widths[thisWidth]) widths[thisWidth] = [thisWidth, 0];
+            widths[thisWidth][1]++;
+        }
+        widths.sort(function (a, b) { return b[1] - a[1]; });
+        if (widths[0][0] == 1) return widths[1][0];
+        else return widths[0][0];
+    };
+
+    var stripeMatchMatrix = function (canvas, data) {
+        var stripeWidth = findStripeWidth(canvas, data);
+        var numberOfStripes = Math.ceil(canvas.width / 32);
+        var stripeMatchMatrix = [];
+        for (var i = 0; i < numberOfStripes; i++) {
+            stripeMatchMatrix[i] = {left: [], right: []};
+            for (var j = 0; j < numberOfStripes; j++) {
+                if (j == i) {
+                    stripeMatchMatrix[i].left[j] = Infinity;
+                    stripeMatchMatrix[i].right[j] = Infinity;
+                } else {
+                    stripeMatchMatrix[i].left[j] = columnDifference(canvas, data, i * stripeWidth, (j + 1) * stripeWidth - 1);
+                    stripeMatchMatrix[i].right[j] = columnDifference(canvas, data, (i + 1) * stripeWidth - 1, j * stripeWidth);
+                }
+            }
+        }
+        return stripeMatchMatrix;
+    };
+
+    var findStripeOrder = function (canvas, data) {
+        var matrix = stripeMatchMatrix(canvas, data);
+        var bestPath = {stripes: [], totalCost: Infinity};
+        for (var i = 0; i < matrix.length; i++) {
+            var currentStripe = i;
+            var currentPath = {stripes: [currentStripe], totalCost: 0};
+            while (currentPath.stripes.length < matrix.length) {
+                var next = {stripe: NaN, cost: Infinity};
+                for (var j = 0; j < matrix.length; j++) {
+                    if (j == i) continue;
+                    if (matrix[currentStripe].right[j] < next.cost) next = {stripe: j, cost: matrix[currentStripe].right[j]};
+                }
+                currentPath.stripes.push(next.stripe);
+                currentPath.totalCost += next.cost;
+                if (currentPath.totalCost > bestPath.totalCost) break;
+                currentStripe = next.stripe;
+            }
+            if (currentPath.totalCost < bestPath.totalCost) bestPath = currentPath;
+        }
+        return bestPath.stripes;
+    };
+
+    var unshred = function () {
+        var shreddedImage = document.getElementsByTagName('img')[0];
+        var shreddedCanvas = document.createElement('canvas');
+        shreddedCanvas.width = shreddedImage.width;
+        shreddedCanvas.height = shreddedImage.height;
+
+        var shreddedContext = shreddedCanvas.getContext('2d');
+        shreddedContext.drawImage(shreddedImage, 0, 0);
+
+        var shreddedData = shreddedContext.getImageData(0, 0, shreddedCanvas.width, shreddedCanvas.height);
+        var path = findStripeOrder(shreddedCanvas, shreddedData.data);
+        console.log(path);
+
+        var unshredCanvas = document.createElement('canvas');
+        unshredCanvas.width = shreddedImage.width;
+        unshredCanvas.height = shreddedImage.height;
+        var unshredContext = unshredCanvas.getContext('2d');
+        var stripeWidth = findStripeWidth(shreddedCanvas, shreddedData.data);
+        for (var stripe = 0; stripe < path.length; stripe++) {
+            var stripeData = shreddedContext.getImageData(path[stripe] * stripeWidth, 0, stripeWidth, unshredCanvas.height);
+            unshredContext.putImageData(stripeData, stripe * stripeWidth, 0);
+        }
+        document.body.appendChild(unshredCanvas);
     }
-    finalStripes = [worst]; appendStripe = worst;
-    for (var s = 0; s < n - 1; s++) {
-        finalStripes.push(compareStripes[appendStripe]);
-        appendStripe = compareStripes[appendStripe];
-    }
-    var c2 = document.createElement('canvas');
-    c2.width = i.width; c2.height = i.height;
-    var x2 = c2.getContext('2d');
-    for (var s = 0; s < n; s++) {
-        var stripeData = x.getImageData(finalStripes[s] * 32, 0, 32, i.height);
-        x2.putImageData(stripeData, s * 32, 0);
-    }
-    document.body.appendChild(c2);
-};
+
+    window.unshred = unshred;
+})(window, document);
+document.getElementsByTagName('img')[0].onload = window.unshred;
