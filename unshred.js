@@ -1,51 +1,31 @@
 (function (window, document, undefined) {
-    var samplingInterval = 1;
-
     var getPixel = function (canvas, data, x, y) {
         var pixelIndex = y * canvas.width * 4 + x * 4;
         var r = data[pixelIndex + 0];
         var g = data[pixelIndex + 1];
         var b = data[pixelIndex + 2];
-        var a = data[pixelIndex + 3];
-        return {red: r, green: g, blue: b, alpha: a};
+        return {red: r, green: g, blue: b};
     };
 
-    /* Thiadmer Reimersma, http://www.compuphase.com/cmetric.htm */
-    var colorDistanceRGB = function (p1, p2) {
-        var rmean = (p1.red + p2.red) / 2;
-        var r = p1.red - p2.red;
-        var g = p1.green - p2.green;
-        var b = p1.blue - p2.blue;
-        return Math.sqrt((((512 + rmean) * r * r) >> 8) + 4 * g * g + (((767 - rmean) * b * b) >> 8));
+    var pixelRGBtoYUV = function (pixel) {
+        var y = pixel.red * 0.299 + pixel.green * 0.587 + pixel.blue * 0.114;
+        var u = pixel.red * -0.168736 + pixel.green * -0.331264 + pixel.blue * 0.5 + 128;
+        var v = pixel.red * 0.5 + pixel.green * -0.418688 + pixel.blue * -0.081312 + 128;
+        return {y: y, u: u, v: v};
+    }
+
+    var colorDistance = function (p1, p2) {
+        var yuv1 = pixelRGBtoYUV(p1);
+        var yuv2 = pixelRGBtoYUV(p2);
+        return Math.sqrt(Math.pow((yuv1.u - yuv2.u), 2) + Math.pow((yuv1.v - yuv2.v), 2));
     };
-
-    var colorDistanceRGBSimplistic = function (p1, p2) {
-        var r = p1.red - p2.red;
-        var g = p1.green - p2.green;
-        var b = p1.blue - p2.blue;
-        return Math.sqrt(((r * r) + (g * g) + (b * b)) / 3);
-    };
-
-    var colorDistanceYUV = function (p1, p2) {
-        var y1 = p1.red *  .299000 + p1.green *  .587000 + p1.blue *  .114000;
-        var u1 = p1.red * -.168736 + p1.green * -.331264 + p1.blue *  .500000 + 128;
-        var v1 = p1.red *  .500000 + p1.green * -.418688 + p1.blue * -.081312 + 128;
-        
-        var y2 = p2.red *  .299000 + p2.green *  .587000 + p2.blue *  .114000;
-        var u2 = p2.red * -.168736 + p2.green * -.331264 + p2.blue *  .500000 + 128;
-        var v2 = p2.red *  .500000 + p2.green * -.418688 + p2.blue * -.081312 + 128;
-
-        return Math.sqrt(Math.pow((u1 - u2), 2) + Math.pow((v1 - v2), 2));
-    };
-
-    var colorDistance = colorDistanceYUV;
 
     var columnDifference = function (canvas, data, column1, column2) {
         var differenceTotal = 0;
-        for (var i = 0; i < canvas.height; i += samplingInterval) {
+        for (var i = 0; i < canvas.height; i++) {
             differenceTotal += colorDistance(getPixel(canvas, data, column1, i), getPixel(canvas, data, column2, i));
         }
-        return differenceTotal / (i - samplingInterval);
+        return differenceTotal / --i;
     };
 
     var rootMeanSquare = function (canvas, data) {
@@ -56,7 +36,7 @@
 
     var findStripeWidth = function (canvas, data) {
         var possibleColumns = [];
-        var threshold = rootMeanSquare(canvas, data) * 1.5;
+        var threshold = rootMeanSquare(canvas, data) * 1.5; // Within 1.5 standard deviations from the mean.
         for (var i = 1; i < canvas.width; i++) {
             if (columnDifference(canvas, data, i - 1, i) > threshold) possibleColumns.push(i);
         }
@@ -67,7 +47,7 @@
             widths[thisWidth][1]++;
         }
         widths.sort(function (a, b) { return b[1] - a[1]; });
-        if (widths[0][0] == 1) return widths[1][0];
+        if (widths[0][0] == 1) return widths[1][0]; // Ignore bunches of dissimilar individual columns.
         else return widths[0][0];
     };
 
@@ -112,31 +92,30 @@
         return bestPath.stripes;
     };
 
-    var unshred = function () {
-        var shreddedImage = document.getElementsByTagName('img')[0];
+    var unshred = function (image) {
         var shreddedCanvas = document.createElement('canvas');
-        shreddedCanvas.width = shreddedImage.width;
-        shreddedCanvas.height = shreddedImage.height;
-
+        shreddedCanvas.width = image.width;
+        shreddedCanvas.height = image.height;
         var shreddedContext = shreddedCanvas.getContext('2d');
-        shreddedContext.drawImage(shreddedImage, 0, 0);
-
-        var shreddedData = shreddedContext.getImageData(0, 0, shreddedCanvas.width, shreddedCanvas.height);
-        var path = findStripeOrder(shreddedCanvas, shreddedData.data);
-        console.log(path);
+        shreddedContext.drawImage(image, 0, 0);
+        var shreddedData = shreddedContext.getImageData(0, 0, shreddedCanvas.width, shreddedCanvas.height).data;
+        var path = findStripeOrder(shreddedCanvas, shreddedData);
 
         var unshredCanvas = document.createElement('canvas');
-        unshredCanvas.width = shreddedImage.width;
-        unshredCanvas.height = shreddedImage.height;
+        unshredCanvas.width = image.width;
+        unshredCanvas.height = image.height;
         var unshredContext = unshredCanvas.getContext('2d');
-        var stripeWidth = findStripeWidth(shreddedCanvas, shreddedData.data);
+        var stripeWidth = findStripeWidth(shreddedCanvas, shreddedData);
         for (var stripe = 0; stripe < path.length; stripe++) {
             var stripeData = shreddedContext.getImageData(path[stripe] * stripeWidth, 0, stripeWidth, unshredCanvas.height);
             unshredContext.putImageData(stripeData, stripe * stripeWidth, 0);
         }
-        document.body.appendChild(unshredCanvas);
+        var div = image.parentNode;
+        div.removeChild(image);
+        div.appendChild(unshredCanvas);
     }
 
     window.unshred = unshred;
 })(window, document);
-document.getElementsByTagName('img')[0].onload = window.unshred;
+var images = document.getElementsByTagName('img');
+for (var i = 0; i < images.length; i++) images[i].onclick = function () { window.unshred(this); };
