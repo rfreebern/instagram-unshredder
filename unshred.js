@@ -11,7 +11,7 @@
     };
 
     /* Thiadmer Reimersma, http://www.compuphase.com/cmetric.htm */
-    var colorDistance = function (p1, p2) {
+    var colorDistanceRGB = function (p1, p2) {
         var rmean = (p1.red + p2.red) / 2;
         var r = p1.red - p2.red;
         var g = p1.green - p2.green;
@@ -19,17 +19,26 @@
         return Math.sqrt((((512 + rmean) * r * r) >> 8) + 4 * g * g + (((767 - rmean) * b * b) >> 8));
     };
 
-    var blockAverage = function (canvas, data, x, y, width, height) {
-        var pixelSum = 0;
-        var pixelCount = 0;
-        for (var xi = x; xi < x + width; xi++) {
-            for (var yi = y; yi < y + height; yi++) {
-                pixelSum += pixelToDecimal(getPixel(canvas, data, xi, yi));
-                pixelCount++;
-            }
-        }
-        return Math.round(pixelSum / (width * height));
+    var colorDistanceRGBSimplistic = function (p1, p2) {
+        var r = p1.red - p2.red;
+        var g = p1.green - p2.green;
+        var b = p1.blue - p2.blue;
+        return Math.sqrt(((r * r) + (g * g) + (b * b)) / 3);
     };
+
+    var colorDistanceYUV = function (p1, p2) {
+        var y1 = p1.red *  .299000 + p1.green *  .587000 + p1.blue *  .114000;
+        var u1 = p1.red * -.168736 + p1.green * -.331264 + p1.blue *  .500000 + 128;
+        var v1 = p1.red *  .500000 + p1.green * -.418688 + p1.blue * -.081312 + 128;
+        
+        var y2 = p2.red *  .299000 + p2.green *  .587000 + p2.blue *  .114000;
+        var u2 = p2.red * -.168736 + p2.green * -.331264 + p2.blue *  .500000 + 128;
+        var v2 = p2.red *  .500000 + p2.green * -.418688 + p2.blue * -.081312 + 128;
+
+        return Math.sqrt(Math.pow((u1 - u2), 2) + Math.pow((v1 - v2), 2));
+    };
+
+    var colorDistance = colorDistanceYUV;
 
     var columnDifference = function (canvas, data, column1, column2) {
         var differenceTotal = 0;
@@ -64,7 +73,7 @@
 
     var stripeMatchMatrix = function (canvas, data) {
         var stripeWidth = findStripeWidth(canvas, data);
-        var numberOfStripes = Math.ceil(canvas.width / 32);
+        var numberOfStripes = Math.ceil(canvas.width / stripeWidth);
         var stripeMatchMatrix = [];
         for (var i = 0; i < numberOfStripes; i++) {
             stripeMatchMatrix[i] = {left: [], right: []};
